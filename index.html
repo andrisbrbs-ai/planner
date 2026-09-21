@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Weekplanner">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)">
+<title>Weekplanner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap">
+<script>
+// ── Inline PWA icon (SVG → PNG via canvas, encoded as data URL) ──
+(function() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+    <rect width="512" height="512" rx="112" fill="#111111"/>
+    <!-- checkmark lines -->
+    <rect x="152" y="152" width="64" height="64" rx="14" fill="none" stroke="#ffffff" stroke-width="28"/>
+    <polyline points="164,184 180,200 208,168" fill="none" stroke="#3a5cff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="152" y="248" width="64" height="64" rx="14" fill="none" stroke="#ffffff" stroke-width="28"/>
+    <rect x="152" y="344" width="64" height="64" rx="14" fill="none" stroke="#ffffff" stroke-width="28"/>
+    <!-- horizontal lines -->
+    <rect x="244" y="168" width="116" height="20" rx="10" fill="#ffffff" opacity="0.9"/>
+    <rect x="244" y="264" width="88" height="20" rx="10" fill="#ffffff" opacity="0.9"/>
+    <rect x="244" y="360" width="100" height="20" rx="10" fill="#ffffff" opacity="0.9"/>
+  </svg>`;
+  const blob = new Blob([svg], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  // Apple touch icon
+  const appleIcon = document.createElement('link');
+  appleIcon.rel = 'apple-touch-icon';
+  appleIcon.href = url;
+  document.head.appendChild(appleIcon);
+  // Favicon
+  const favicon = document.createElement('link');
+  favicon.rel = 'icon'; favicon.type = 'image/svg+xml'; favicon.href = url;
+  document.head.appendChild(favicon);
+  // Manifest (inline via data URI)
+  const manifest = {
+    name: 'Weekplanner',
+    short_name: 'Planner',
+    start_url: '.',
+    display: 'standalone',
+    background_color: '#ffffff',
+    theme_color: '#111111',
+    icons: [
+      { src: url, sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+    ]
+  };
+  const mlink = document.createElement('link');
+  mlink.rel = 'manifest';
+  mlink.href = 'data:application/json,' + encodeURIComponent(JSON.stringify(manifest));
+  document.head.appendChild(mlink);
+})();
+// ── Inline Service Worker (via Blob) ──
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    const CACHE = 'weekplanner-v1';
+    self.addEventListener('install', e => {
+      self.skipWaiting();
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      ));
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.open(CACHE).then(cache =>
+          cache.match(e.request).then(hit => hit || fetch(e.request))
+        )
+      );
+    });
+  `;
+  const swBlob = new Blob([swCode], {type: 'application/javascript'});
+  const swUrl = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
+</script>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --border: #e8e8e8;
+    --border-strong: #d0d0d0;
+    --text-primary: #111111;
+    --text-secondary: #999999;
+    --text-muted: #cccccc;
+    --today-accent: #3a5cff;
+    --hover-bg: #f7f7f7;
+    --strike-color: #aaaaaa;
+    --tab-active-bg: #111111;
+    --tab-active-text: #ffffff;
+    --section-label-bg: #f7f7f7;
+    --col-name-width: 220px;
+    --drag-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f0f0f;
+      --border: #2a2a2a;
+      --border-strong: #3a3a3a;
+      --text-primary: #ebebeb;
+      --text-secondary: #666666;
+      --text-muted: #333333;
+      --today-accent: #5b7bff;
+      --hover-bg: #1a1a1a;
+      --strike-color: #555555;
+      --tab-active-bg: #ebebeb;
+      --tab-active-text: #111111;
+      --section-label-bg: #1a1a1a;
+      --drag-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f0f0f;
+    --border: #2a2a2a;
+    --border-strong: #3a3a3a;
+    --text-primary: #ebebeb;
+    --text-secondary: #666666;
+    --text-muted: #333333;
+    --today-accent: #5b7bff;
+    --hover-bg: #1a1a1a;
+    --strike-color: #555555;
+    --tab-active-bg: #ebebeb;
+    --tab-active-text: #111111;
+    --section-label-bg: #1a1a1a;
+    --drag-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Geist', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text-primary); font-size: 13px; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ── Header ── */
+  .header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab-switcher { display: flex; gap: 2px; background: var(--section-label-bg); border-radius: 8px; padding: 3px; flex-shrink: 0; }
+  .tab-btn { background: none; border: none; padding: 5px 14px; border-radius: 6px; font-family: inherit; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .tab-btn.active { background: var(--tab-active-bg); color: var(--tab-active-text); }
+  .cal-controls { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .month-title { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .nav-buttons { display: flex; gap: 4px; }
+  .nav-btn { background: none; border: 1px solid var(--border); color: var(--text-secondary); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.1s; }
+  .nav-btn:hover { background: var(--hover-bg); color: var(--text-primary); }
+  .today-btn { background: none; border: 1px solid var(--border); color: var(--text-secondary); padding: 0 12px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 500; transition: all 0.1s; }
+  .today-btn:hover { background: var(--hover-bg); color: var(--text-primary); }
+
+  /* ── Panels ── */
+  .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .tab-panel.active { display: flex; }
+
+  /* ── Kalender ── */
+  .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; overflow: hidden; transition: grid-template-columns 0.2s ease; }
+  .day-col { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; transition: min-width 0.2s ease; }
+  .day-col:last-child { border-right: none; }
+  .day-header { padding: 12px 12px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
+  .day-date { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
+  .day-name { font-size: 10px; font-weight: 400; color: var(--text-secondary); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .day-col.today .day-date { color: var(--today-accent); }
+  .day-col.today .day-header { border-bottom: 1px solid var(--today-accent); box-shadow: 0 1px 0 0 var(--today-accent); }
+
+  /* Hide button */
+  .hide-day-btn {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); line-height: 1;
+    opacity: 0; transition: opacity 0.15s;
+    padding: 2px 4px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hide-day-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .day-header:hover .hide-day-btn { opacity: 1; }
+  .day-col.day-hidden .hide-day-btn { opacity: 0.5; }
+  .day-col.day-hidden .day-header:hover .hide-day-btn { opacity: 1; }
+
+  /* Hidden day: looks like an empty greyed-out day */
+  .day-col.day-hidden { background: var(--hover-bg); }
+  .day-col.day-hidden .day-date,
+  .day-col.day-hidden .day-name { color: var(--text-muted); }
+  .day-col.day-hidden.today .day-date { color: var(--text-muted); }
+  .day-col.day-hidden.today .day-header { border-bottom-color: var(--border); }
+  .day-col.day-hidden .tasks-area { pointer-events: none; opacity: 0; }
+
+  .notes-section { border-top: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; }
+  .notes-label { padding: 8px 24px 3px; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-secondary); }
+  .notes-input { background: none; border: none; outline: none; font-family: inherit; font-size: 13px; color: var(--text-primary); resize: none; padding: 4px 24px 14px; min-height: 70px; line-height: 1.6; }
+  .notes-input::placeholder { color: var(--text-muted); }
+
+  /* ── Gedeelde taken area ── */
+  .tasks-area { flex: 1; overflow-y: auto; position: relative; }
+
+  /* ── Drag handle ── */
+  .drag-handle {
+    width: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.1s;
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: -1px;
+    padding: 0 2px;
+    user-select: none;
+  }
+  .drag-handle:active { cursor: grabbing; }
+  .cal-task-row:hover .drag-handle,
+  .task-row:hover .drag-handle { opacity: 1; }
+
+  /* ── Kalender rij ── */
+  .cal-task-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 0 6px 0 2px;
+    min-height: 32px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    transition: background 0.12s;
+    user-select: none;
+  }
+  .cal-task-row:last-child { border-bottom: none; }
+  .cal-task-row:not(.has-row-color):hover { background: var(--hover-bg); }
+  .cal-task-row.has-row-color .color-dot { border-color: rgba(0,0,0,0.15); background: rgba(0,0,0,0.12) !important; }
+  .cal-task-row.drag-over-top { border-top: 2px solid var(--today-accent); }
+  .cal-task-row.drag-over-bottom { border-bottom: 2px solid var(--today-accent); }
+  /* Drop-zone indicator when dragging over a column */
+  .day-col.drag-target-col > .tasks-area { background: rgba(58,92,255,0.04); }
+
+  /* ── Lijst rij ── */
+  .task-row {
+    display: flex; align-items: stretch;
+    min-height: 36px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    transition: background 0.12s;
+    user-select: none;
+  }
+  .task-row:last-child { border-bottom: none; }
+  .task-row:not(.has-row-color):hover { background: var(--hover-bg); }
+  .task-row.drag-over-top { border-top: 2px solid var(--today-accent); }
+  .task-row.drag-over-bottom { border-bottom: 2px solid var(--today-accent); }
+
+  /* Kleurstreep lijst */
+  .row-color-bar { width: 3px; flex-shrink: 0; background: transparent; transition: background 0.15s; }
+
+  /* Cellen lijst */
+  .cell-name { width: var(--col-name-width); flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-right: 1px solid var(--border); }
+  .cell-note { flex: 1; display: flex; align-items: center; padding: 0 12px; }
+
+  /* Kleur dot */
+  .color-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; cursor: pointer; transition: transform 0.1s; background: transparent; border: 1.5px solid var(--border-strong); opacity: 0; }
+  .cal-task-row:hover .color-dot, .cal-task-row.has-row-color .color-dot,
+  .task-row:hover .color-dot, .task-row.has-row-color .color-dot { opacity: 1; }
+  .task-row.has-row-color .color-dot { border-color: rgba(0,0,0,0.2); background: rgba(0,0,0,0.1) !important; }
+  .color-dot:hover { transform: scale(1.3); }
+
+  /* Inputs */
+  .task-input { flex: 1; background: none; border: none; outline: none; font-family: inherit; font-size: 13px; color: var(--text-primary); padding: 8px 0; min-width: 0; white-space: nowrap; overflow: hidden; cursor: text; }
+  .task-input:empty::before { content: attr(data-placeholder); color: var(--text-muted); pointer-events: none; }
+  .task-input.done { text-decoration: line-through; color: var(--strike-color); }
+  .cell-name .task-input { font-weight: 500; }
+
+  /* Check knop */
+  .check-btn { opacity: 0; background: none; border: none; cursor: pointer; color: var(--text-secondary); font-size: 13px; padding: 0 8px; align-self: stretch; display: flex; align-items: center; transition: opacity 0.1s; flex-shrink: 0; }
+  .cal-task-row.has-text:hover .check-btn, .task-row.has-text:hover .check-btn { opacity: 1; }
+  .cal-task-row.is-done .check-btn, .task-row.is-done .check-btn { opacity: 1; color: var(--today-accent); }
+
+  /* Kolom header */
+  .list-col-header { display: flex; align-items: center; border-bottom: 1px solid var(--border); background: var(--section-label-bg); flex-shrink: 0; }
+  .list-col-header-cell { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-secondary); padding: 9px 10px 9px 21px; }
+  .list-col-header-cell.name-col { width: var(--col-name-width); flex-shrink: 0; border-right: 1px solid var(--border); }
+  .list-col-header-cell.note-col { flex: 1; }
+
+  /* Kleurpicker */
+  .color-picker { position: absolute; left: 4px; top: calc(100% + 4px); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 300; box-shadow: 0 4px 16px rgba(0,0,0,0.1); width: 124px; }
+  .cp-swatch { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: none; transition: transform 0.1s; }
+  .cp-swatch:hover { transform: scale(1.2); }
+  .cp-clear { width: 18px; height: 18px; border-radius: 50%; background: none; border: 1.5px solid var(--border-strong); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-secondary); }
+
+  /* + rij knop — only visible when hovering last row */
+  .add-row-btn {
+    display: block; width: 100%; background: none; border: none;
+    color: var(--text-muted); font-size: 14px; padding: 5px 0;
+    cursor: pointer; text-align: center; font-family: inherit;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  /* Show + only when hovering the last cal-task-row or the button itself */
+  .cal-task-row:last-of-type:hover ~ .add-row-btn,
+  .add-row-btn:hover { opacity: 1; }
+
+  /* Drag ghost */
+  .drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.85;
+    box-shadow: var(--drag-shadow);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transform: rotate(1deg) scale(1.01);
+  }
+
+  /* ── Notities tab ── */
+  .notes-editor-wrap {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    padding: 32px 48px;
+  }
+  .notes-editor {
+    flex: 1;
+    background: none; border: none; outline: none;
+    font-family: inherit; font-size: 14px; line-height: 1.85;
+    color: var(--text-primary); resize: none;
+    max-width: 780px; width: 100%;
+  }
+  .notes-editor::placeholder { color: var(--text-muted); }
+
+  /* Scrollbars */
+  .tasks-area::-webkit-scrollbar { width: 3px; }
+  .tasks-area::-webkit-scrollbar-track { background: transparent; }
+  .tasks-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .notes-editor-wrap::-webkit-scrollbar { width: 3px; }
+  .notes-editor-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Sync dot ── */
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--border-strong);
+    transition: background 0.3s;
+    margin-left: auto;
+  }
+  .sync-dot.ok { background: #69db7c; }
+  .sync-dot.saving { background: #ffa94d; }
+  .sync-dot.error { background: #ff6b6b; }
+  .sync-dot.offline { background: var(--border-strong); }
+
+  /* ── Mobile layout ── */
+  @media (max-width: 680px) {
+    /* Header: compress */
+    .header { padding: 10px 14px; gap: 8px; flex-wrap: nowrap; overflow: hidden; }
+    .tab-switcher { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tab-switcher::-webkit-scrollbar { display: none; }
+    .tab-btn { padding: 5px 10px; font-size: 11px; }
+    .cal-controls { gap: 6px; }
+    .month-title { font-size: 13px; }
+    .nav-btn, .today-btn { display: none; }
+    #syncDot { display: none; }
+    /* Hide the floating day label that appears next to tabs */
+    #monthTitle { display: none; }
+
+    /* Calendar: horizontal scroll snap, one day per screen */
+    .week-grid {
+      display: flex;
+      flex-direction: row;
+      overflow-x: scroll;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      flex: 1;
+    }
+    .week-grid::-webkit-scrollbar { display: none; }
+    .day-col {
+      flex: 0 0 100vw;
+      min-width: 100vw;
+      scroll-snap-align: start;
+      border-right: 1px solid var(--border);
+    }
+    .day-col:last-child { border-right: none; }
+
+    /* Scroll to today on load */
+    .day-col.today { scroll-snap-align: start; }
+
+    /* Notes section on mobile */
+    .notes-section { flex-shrink: 0; }
+
+    /* List view on mobile */
+    --col-name-width: 140px;
+    .list-col-header-cell.name-col { width: 140px; }
+    .cell-name { width: 140px; }
+
+    /* Notities / Onderhoud */
+    .notes-editor-wrap { padding: 20px 18px; }
+
+    /* Bigger tap targets */
+    .cal-task-row { min-height: 38px; }
+    .check-btn { padding: 0 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="tab-switcher">
+      <button class="tab-btn active" data-tab="kalender">Kalender</button>
+      <button class="tab-btn" data-tab="werk">Werk</button>
+      <button class="tab-btn" data-tab="persoonlijk">Persoonlijk</button>
+      <button class="tab-btn" data-tab="notities">Notities</button>
+      <button class="tab-btn" data-tab="onderhoud">Onderhoud</button>
+    </div>
+    <div class="cal-controls" id="calControls">
+      <span class="month-title" id="monthTitle"></span>
+      <div class="nav-buttons">
+        <button class="nav-btn" id="prevWeek">&#8249;</button>
+        <button class="nav-btn" id="nextWeek">&#8250;</button>
+      </div>
+      <button class="today-btn" id="todayBtn">Vandaag</button>
+    </div>
+    <div id="syncDot" class="sync-dot" title="Sync status"></div>
+  </header>
+
+  <div class="tab-panel active" id="panel-kalender">
+    <div class="week-grid" id="weekGrid"></div>
+    <section class="notes-section">
+      <div class="notes-label">Notities</div>
+      <textarea class="notes-input" id="notesInput" placeholder="Schrijf hier je notities…" spellcheck="false"></textarea>
+    </section>
+  </div>
+
+  <div class="tab-panel" id="panel-werk">
+    <div class="list-col-header">
+      <div class="list-col-header-cell name-col">Te doen</div>
+      <div class="list-col-header-cell note-col">Notities</div>
+    </div>
+    <div class="tasks-area" id="werkTasks"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-persoonlijk">
+    <div class="list-col-header">
+      <div class="list-col-header-cell name-col">Te doen</div>
+      <div class="list-col-header-cell note-col">Notities</div>
+    </div>
+    <div class="tasks-area" id="persoonlijkTasks"></div>
+  </div>
+
+  <div class="tab-panel" id="panel-notities">
+    <div class="notes-editor-wrap">
+      <textarea class="notes-editor" id="notesEditor" placeholder="Schrijf hier je losse gedachten…" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="panel-onderhoud">
+    <div class="notes-editor-wrap">
+      <textarea class="notes-editor" id="onderhoudEditor" placeholder="Schrijf hier je onderhoudstaken…" spellcheck="false"></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAYS_NL = ['Zo','Ma','Di','Wo','Do','Vr','Za'];
+const MONTHS_NL = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+const TASK_COLORS = ['#ff6b6b','#ffa94d','#69db7c','#4dabf7','#cc5de8','#f06595'];
+const CAL_ROWS_DEFAULT = 10;
+const LIST_ROWS = 24;
+
+let currentWeekStart = getWeekStart(new Date());
+let calData = {};
+let listData = { werk: [], persoonlijk: [] };
+let activeColorPicker = null;
+let hiddenDays = new Set(); // Set of dateKey strings
+
+// ── Helpers ──────────────────────────────────────────
+
+function getWeekStart(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  date.setHours(0,0,0,0);
+  return date;
+}
+function dateKey(d) { return d.toISOString().slice(0,10); }
+function emptyTask() { return { name: '', note: '', done: false, color: null }; }
+function emptyCalTask() { return { text: '', done: false, color: null }; }
+
+function loadData() {
+  try { const c = localStorage.getItem('wp_cal'); if (c) calData = JSON.parse(c); } catch(e) {}
+  try { const l = localStorage.getItem('wp_list'); if (l) listData = JSON.parse(l); } catch(e) {}
+  try { const h = localStorage.getItem('wp_hidden'); if (h) hiddenDays = new Set(JSON.parse(h)); } catch(e) {}
+  ['werk','persoonlijk'].forEach(cat => {
+    if (!listData[cat]) listData[cat] = [];
+    while (listData[cat].length < LIST_ROWS) listData[cat].push(emptyTask());
+  });
+}
+function saveCalData() { try { localStorage.setItem('wp_cal', JSON.stringify(calData)); } catch(e) {} }
+function saveListData() { try { localStorage.setItem('wp_list', JSON.stringify(listData)); } catch(e) {} }
+function saveHiddenDays() { try { localStorage.setItem('wp_hidden', JSON.stringify([...hiddenDays])); } catch(e) {} }
+function toggleHideDay(key) {
+  if (hiddenDays.has(key)) hiddenDays.delete(key); else hiddenDays.add(key);
+  saveHiddenDays();
+  renderWeek();
+}
+
+function getExtraRows() {
+  return calData._extraRows || 0;
+}
+function setExtraRows(n) {
+  calData._extraRows = Math.max(0, n);
+  saveCalData();
+}
+function totalRows() { return CAL_ROWS_DEFAULT + getExtraRows(); }
+
+function getCalTasks(key) {
+  if (!calData[key]) calData[key] = { tasks: [] };
+  const target = totalRows();
+  while (calData[key].tasks.length < target) calData[key].tasks.push(emptyCalTask());
+  // Trim to totalRows (no more per-day extensions)
+  if (calData[key].tasks.length > target) calData[key].tasks.length = target;
+  return calData[key].tasks;
+}
+
+// ── Kleur ──────────────────────────────────────────
+
+function applyColor(rowEl, colorBarEl, dotEl, color) {
+  const alpha1 = rowEl.classList.contains('cal-task-row') ? '28' : '1e';
+  const alpha2 = rowEl.classList.contains('cal-task-row') ? '55' : '44';
+  if (color) {
+    rowEl.style.background = color + alpha1;
+    rowEl.style.borderBottomColor = color + alpha2;
+    rowEl.classList.add('has-row-color');
+    if (colorBarEl) colorBarEl.style.background = color;
+    if (dotEl) dotEl.style.background = color;
+  } else {
+    rowEl.style.background = '';
+    rowEl.style.borderBottomColor = '';
+    rowEl.classList.remove('has-row-color');
+    if (colorBarEl) colorBarEl.style.background = '';
+    if (dotEl) dotEl.style.background = '';
+  }
+}
+
+function closeColorPicker() {
+  if (activeColorPicker) { activeColorPicker.remove(); activeColorPicker = null; }
+}
+
+function showColorPicker(anchorEl, onSelect) {
+  closeColorPicker();
+  const picker = document.createElement('div');
+  picker.className = 'color-picker';
+  const clear = document.createElement('button');
+  clear.className = 'cp-clear'; clear.textContent = '×';
+  clear.addEventListener('click', e => { e.stopPropagation(); onSelect(null); closeColorPicker(); });
+  picker.appendChild(clear);
+  TASK_COLORS.forEach(color => {
+    const sw = document.createElement('button');
+    sw.className = 'cp-swatch'; sw.style.background = color;
+    sw.addEventListener('click', e => { e.stopPropagation(); onSelect(color); closeColorPicker(); });
+    picker.appendChild(sw);
+  });
+  anchorEl.parentElement.appendChild(picker);
+  activeColorPicker = picker;
+}
+
+// ── ContentEditable helpers ───────────────────────────
+
+function ceGetText(el) {
+  // Get plain text from contenteditable, preserving **bold** markers
+  // Walk child nodes: <b>/<strong> → wrap in **, text nodes → plain
+  function walk(node) {
+    if (node.nodeType === 3) return node.textContent;
+    if (node.nodeName === 'B' || node.nodeName === 'STRONG') return '**' + Array.from(node.childNodes).map(walk).join('') + '**';
+    return Array.from(node.childNodes).map(walk).join('');
+  }
+  return walk(el);
+}
+
+function ceSetHtml(el, text) {
+  // Convert **bold** markers to <b> tags for display
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  el.innerHTML = '';
+  parts.forEach(part => {
+    const m = part.match(/^\*\*(.+)\*\*$/);
+    if (m) {
+      const b = document.createElement('b');
+      b.textContent = m[1];
+      el.appendChild(b);
+    } else if (part) {
+      el.appendChild(document.createTextNode(part));
+    }
+  });
+}
+
+function ceIsEmpty(el) {
+  return ceGetText(el).trim() === '';
+}
+
+function makeCeInput(placeholder, initialText, doneClass) {
+  const div = document.createElement('div');
+  div.className = 'task-input' + (doneClass ? ' done' : '');
+  div.contentEditable = 'true';
+  div.setAttribute('data-placeholder', placeholder || '');
+  div.spellcheck = false;
+  if (initialText) ceSetHtml(div, initialText);
+  // Ctrl+B → toggle bold on selection
+  div.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      document.execCommand('bold');
+    }
+    // Prevent newlines
+    if (e.key === 'Enter') {
+      e.preventDefault();
+    }
+  });
+  // Strip paste formatting
+  div.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+  return div;
+}
+
+// ── Drag & drop ──────────────────────────────────────
+// dragState also tracks cross-column calendar drags
+// For cal drags: sourceKey / targetKey allow moving between day columns
+
+let dragState = null;
+let dragOverRow = null;
+let dragOverPos = null; // 'top' | 'bottom'
+let dragOverCol = null; // day-col element for cross-column hover
+
+function makeDragHandle() {
+  const h = document.createElement('div');
+  h.className = 'drag-handle';
+  h.innerHTML = '&#8942;&#8942;';
+  h.title = 'Verslepen';
+  return h;
+}
+
+// For calendar rows: startDrag receives sourceKey so we can move across columns
+function startCalDrag(e, rowEl, sourceKey, sourceIdx) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+
+  const rect = rowEl.getBoundingClientRect();
+  const ghost = rowEl.cloneNode(true);
+  ghost.className = 'drag-ghost';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  ghost.querySelectorAll('input,textarea,button,[contenteditable]').forEach(el => { el.setAttribute('tabindex','-1'); el.contentEditable = 'false'; });
+  document.body.appendChild(ghost);
+
+  dragState = {
+    type: 'cal',
+    ghost, sourceRow: rowEl,
+    sourceKey, sourceIdx,
+    offX: e.clientX - rect.left, offY: e.clientY - rect.top
+  };
+  rowEl.style.opacity = '0.3';
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'grabbing';
+}
+
+function startListDrag(e, rowEl, sourceArray, sourceIdx, onSave, rerender) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+
+  const rect = rowEl.getBoundingClientRect();
+  const ghost = rowEl.cloneNode(true);
+  ghost.className = 'drag-ghost';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  ghost.querySelectorAll('input,textarea,button,[contenteditable]').forEach(el => { el.setAttribute('tabindex','-1'); el.contentEditable = 'false'; });
+  document.body.appendChild(ghost);
+
+  dragState = {
+    type: 'list',
+    ghost, sourceRow: rowEl,
+    sourceArray, sourceIdx, onSave, rerender,
+    offX: e.clientX - rect.left, offY: e.clientY - rect.top
+  };
+  rowEl.style.opacity = '0.3';
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'grabbing';
+}
+
+document.addEventListener('mousemove', e => {
+  if (!dragState) return;
+  const { ghost, offX, offY } = dragState;
+  ghost.style.left = (e.clientX - offX) + 'px';
+  ghost.style.top = (e.clientY - offY) + 'px';
+
+  ghost.style.display = 'none';
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  ghost.style.display = '';
+
+  if (!target) return;
+
+  if (dragState.type === 'cal') {
+    // Highlight the day column we're hovering
+    const newCol = target.closest('.day-col');
+    if (newCol !== dragOverCol) {
+      if (dragOverCol) dragOverCol.classList.remove('drag-target-col');
+      dragOverCol = newCol;
+      if (dragOverCol) dragOverCol.classList.add('drag-target-col');
+    }
+
+    const row = target.closest('.cal-task-row');
+    if (!row || row === dragState.sourceRow) {
+      clearDragOver(); return;
+    }
+    const rect = row.getBoundingClientRect();
+    const pos = e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom';
+    if (dragOverRow !== row || dragOverPos !== pos) {
+      clearDragOver();
+      dragOverRow = row; dragOverPos = pos;
+      row.classList.add(pos === 'top' ? 'drag-over-top' : 'drag-over-bottom');
+    }
+  } else {
+    // List drag
+    const row = target.closest('.task-row');
+    if (!row || row === dragState.sourceRow) { clearDragOver(); return; }
+    const rect = row.getBoundingClientRect();
+    const pos = e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom';
+    if (dragOverRow !== row || dragOverPos !== pos) {
+      clearDragOver();
+      dragOverRow = row; dragOverPos = pos;
+      row.classList.add(pos === 'top' ? 'drag-over-top' : 'drag-over-bottom');
+    }
+  }
+});
+
+document.addEventListener('mouseup', e => {
+  if (!dragState) return;
+  const { ghost, sourceRow } = dragState;
+
+  if (dragState.type === 'cal') {
+    // Figure out target column key
+    const targetCol = dragOverCol || sourceRow.closest('.day-col');
+    const targetKey = targetCol ? targetCol.dataset.key : dragState.sourceKey;
+
+    const sourceTasks = calData[dragState.sourceKey].tasks;
+    const [moved] = sourceTasks.splice(dragState.sourceIdx, 1);
+
+    // Ensure target has data
+    if (!calData[targetKey]) calData[targetKey] = { tasks: [] };
+    while (calData[targetKey].tasks.length < CAL_ROWS_DEFAULT) calData[targetKey].tasks.push(emptyCalTask());
+    const targetTasks = calData[targetKey].tasks;
+
+    let targetIdx = targetTasks.length; // default: append at end
+
+    if (dragOverRow && dragOverRow !== sourceRow) {
+      const area = dragOverRow.parentElement;
+      const rows = Array.from(area.querySelectorAll('.cal-task-row'));
+      targetIdx = rows.indexOf(dragOverRow);
+      if (dragState.sourceKey === targetKey && dragState.sourceIdx < targetIdx) targetIdx--;
+      if (dragOverPos === 'bottom') targetIdx++;
+    }
+
+    targetTasks.splice(targetIdx, 0, moved);
+
+    // Trim empty trailing tasks in source if it grew beyond default
+    if (dragState.sourceKey !== targetKey) {
+      while (sourceTasks.length < CAL_ROWS_DEFAULT) sourceTasks.push(emptyCalTask());
+    }
+
+    saveCalData();
+    renderWeek(); // full re-render for cross-column moves
+  } else {
+    // List drag
+    const { sourceArray, sourceIdx, onSave, rerender } = dragState;
+    if (dragOverRow && dragOverRow !== sourceRow) {
+      const container = dragOverRow.parentElement;
+      const rows = Array.from(container.querySelectorAll('.task-row'));
+      let targetIdx = rows.indexOf(dragOverRow);
+      const [moved] = sourceArray.splice(sourceIdx, 1);
+      if (sourceIdx < targetIdx) targetIdx--;
+      if (dragOverPos === 'bottom') targetIdx++;
+      sourceArray.splice(targetIdx, 0, moved);
+      onSave();
+      rerender();
+    }
+  }
+
+  // Cleanup
+  if (dragOverCol) { dragOverCol.classList.remove('drag-target-col'); dragOverCol = null; }
+  clearDragOver();
+  ghost.remove();
+  sourceRow.style.opacity = '';
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  dragState = null;
+});
+
+function clearDragOver() {
+  if (dragOverRow) {
+    dragOverRow.classList.remove('drag-over-top', 'drag-over-bottom');
+    dragOverRow = null; dragOverPos = null;
+  }
+}
+
+// ── Kalender rij ────────────────────────────────────
+
+function buildCalRow(task, dateKey, taskArray, idx, area) {
+  const row = document.createElement('div');
+  row.className = 'cal-task-row' + (task.done ? ' is-done' : '') + (task.color ? ' has-row-color' : '') + (task.text ? ' has-text' : '');
+  if (task.color) { row.style.background = task.color + '28'; row.style.borderBottomColor = task.color + '55'; }
+
+  const handle = makeDragHandle();
+  handle.addEventListener('mousedown', e => startCalDrag(e, row, dateKey, idx));
+
+  const dot = document.createElement('div');
+  dot.className = 'color-dot';
+  if (task.color) dot.style.background = task.color;
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    showColorPicker(dot, color => { task.color = color; applyColor(row, null, dot, color); saveCalData(); });
+  });
+
+  const input = makeCeInput('', task.text, task.done);
+  input.addEventListener('input', () => {
+    task.text = ceGetText(input);
+    row.classList.toggle('has-text', !ceIsEmpty(input));
+    saveCalData();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (ceIsEmpty(input) && task.color) {
+        task.color = null; applyColor(row, null, dot, null); saveCalData();
+      } else if (ceIsEmpty(input) && !task.color && idx >= CAL_ROWS_DEFAULT) {
+        const allEmpty = Object.keys(calData).filter(k => k !== '_extraRows').every(k => {
+          const t = calData[k] && calData[k].tasks && calData[k].tasks[idx];
+          return !t || (!t.text && !t.done && !t.color);
+        });
+        if (allEmpty) {
+          setExtraRows(getExtraRows() - 1);
+          Object.keys(calData).filter(k => k !== '_extraRows').forEach(k => {
+            if (calData[k] && calData[k].tasks && calData[k].tasks.length > totalRows()) {
+              calData[k].tasks.length = totalRows();
+            }
+          });
+          saveCalData();
+          renderWeek();
+        }
+      }
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const inputs = area.querySelectorAll('.task-input');
+      const i = Array.from(inputs).indexOf(input);
+      if (inputs[i + 1]) inputs[i + 1].focus();
+    }
+  });
+
+  const checkBtn = document.createElement('button');
+  checkBtn.className = 'check-btn'; checkBtn.innerHTML = task.done ? '↩' : '✓';
+  checkBtn.addEventListener('click', () => {
+    if (ceIsEmpty(input) && !task.done) return;
+    task.done = !task.done;
+    input.classList.toggle('done', task.done);
+    row.classList.toggle('is-done', task.done);
+    checkBtn.innerHTML = task.done ? '↩' : '✓';
+    saveCalData();
+  });
+
+  row.appendChild(handle); row.appendChild(dot); row.appendChild(input); row.appendChild(checkBtn);
+  return { row, input };
+}
+
+function rerenderCalArea(area, key, taskArray) {
+  const addBtn = area.querySelector('.add-row-btn');
+  area.querySelectorAll('.cal-task-row').forEach(r => r.remove());
+  taskArray.forEach((task, idx) => {
+    const { row } = buildCalRow(task, key, taskArray, idx, area);
+    area.insertBefore(row, addBtn);
+  });
+}
+
+// ── Lijst rij ────────────────────────────────────────
+
+function buildListRow(task, taskArray, idx, onSave, container) {
+  const row = document.createElement('div');
+  row.className = 'task-row' + (task.done ? ' is-done' : '') + (task.color ? ' has-row-color' : '') + (task.name || task.note ? ' has-text' : '');
+  if (task.color) { row.style.background = task.color + '1e'; row.style.borderBottomColor = task.color + '44'; }
+
+  const colorBar = document.createElement('div');
+  colorBar.className = 'row-color-bar';
+  if (task.color) colorBar.style.background = task.color;
+
+  const handle = makeDragHandle();
+  handle.style.alignSelf = 'stretch';
+  handle.style.display = 'flex';
+  handle.style.alignItems = 'center';
+  handle.addEventListener('mousedown', e => startListDrag(e, row, taskArray, idx, onSave, () => rerenderListArea(container, taskArray, onSave)));
+
+  const cellName = document.createElement('div');
+  cellName.className = 'cell-name';
+
+  const dot = document.createElement('div');
+  dot.className = 'color-dot';
+  if (task.color) dot.style.background = task.color;
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    showColorPicker(dot, color => { task.color = color; applyColor(row, colorBar, dot, color); onSave(); });
+  });
+
+  const nameInput = makeCeInput('—', task.name || '', task.done);
+  nameInput.addEventListener('input', () => {
+    task.name = ceGetText(nameInput);
+    row.classList.toggle('has-text', !!(task.name || task.note));
+    onSave();
+  });
+  nameInput.addEventListener('keydown', e => {
+    if ((e.key === 'Backspace' || e.key === 'Delete') && ceIsEmpty(nameInput) && task.color) {
+      task.color = null; applyColor(row, colorBar, dot, null); onSave();
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nameInputs = container.querySelectorAll('.cell-name .task-input');
+      if (nameInputs[idx + 1]) nameInputs[idx + 1].focus();
+    }
+    if (e.key === 'Tab') { e.preventDefault(); noteInput.focus(); }
+  });
+  cellName.appendChild(dot); cellName.appendChild(nameInput);
+
+  const cellNote = document.createElement('div');
+  cellNote.className = 'cell-note';
+  const noteInput = makeCeInput('—', task.note || '', task.done);
+  noteInput.addEventListener('input', () => {
+    task.note = ceGetText(noteInput);
+    row.classList.toggle('has-text', !!(task.name || task.note));
+    onSave();
+  });
+  noteInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nameInputs = container.querySelectorAll('.cell-name .task-input');
+      if (nameInputs[idx + 1]) nameInputs[idx + 1].focus();
+    }
+  });
+  cellNote.appendChild(noteInput);
+
+  const checkBtn = document.createElement('button');
+  checkBtn.className = 'check-btn'; checkBtn.innerHTML = task.done ? '↩' : '✓';
+  checkBtn.addEventListener('click', () => {
+    if (ceIsEmpty(nameInput) && ceIsEmpty(noteInput) && !task.done) return;
+    task.done = !task.done;
+    nameInput.classList.toggle('done', task.done);
+    noteInput.classList.toggle('done', task.done);
+    row.classList.toggle('is-done', task.done);
+    checkBtn.innerHTML = task.done ? '↩' : '✓';
+    onSave();
+  });
+
+  row.appendChild(colorBar); row.appendChild(handle); row.appendChild(cellName); row.appendChild(cellNote); row.appendChild(checkBtn);
+  return { row, nameInput, noteInput };
+}
+
+function rerenderListArea(container, taskArray, onSave) {
+  container.innerHTML = '';
+  taskArray.forEach((task, idx) => {
+    const { row } = buildListRow(task, taskArray, idx, onSave, container);
+    container.appendChild(row);
+  });
+}
+
+// ── Kalender renderen ─────────────────────────────────
+
+function renderWeek() {
+  const grid = document.getElementById('weekGrid');
+  grid.innerHTML = '';
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + i);
+    const key = dateKey(date);
+    const isToday = date.getTime() === today.getTime();
+
+    const isHidden = hiddenDays.has(key);
+
+    const col = document.createElement('div');
+    col.className = 'day-col' + (isToday ? ' today' : '') + (isHidden ? ' day-hidden' : '');
+    col.dataset.key = key; // needed for cross-column drag
+
+    const hdr = document.createElement('div'); hdr.className = 'day-header';
+    const ds = document.createElement('div'); ds.className = 'day-date';
+    ds.textContent = date.getDate() + ' ' + MONTHS_NL[date.getMonth()].slice(0,3);
+    const dn = document.createElement('div'); dn.className = 'day-name';
+    dn.textContent = DAYS_NL[date.getDay()];
+
+    const hideBtn = document.createElement('button');
+    hideBtn.className = 'hide-day-btn';
+    hideBtn.title = isHidden ? 'Dag tonen' : 'Dag verbergen';
+    // SVG eye / eye-off
+    hideBtn.innerHTML = isHidden
+      ? `<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+      : `<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    hideBtn.addEventListener('click', e => { e.stopPropagation(); toggleHideDay(key); });
+
+    hdr.appendChild(ds); hdr.appendChild(dn); hdr.appendChild(hideBtn);
+    col.appendChild(hdr);
+
+    const area = document.createElement('div'); area.className = 'tasks-area';
+    const tasks = getCalTasks(key);
+
+    tasks.forEach((task, idx) => {
+      const { row } = buildCalRow(task, key, tasks, idx, area);
+      area.appendChild(row);
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-row-btn'; addBtn.textContent = '+';
+    addBtn.addEventListener('click', () => {
+      setExtraRows(getExtraRows() + 1);
+      renderWeek();
+      // Focus new last row of this column
+      const cols = document.querySelectorAll('.day-col');
+      let focusCol = null;
+      cols.forEach(c => { if (c.dataset.key === key) focusCol = c; });
+      if (focusCol) {
+        const inputs = focusCol.querySelectorAll('.task-input');
+        if (inputs.length) inputs[inputs.length - 1].focus();
+      }
+    });
+    area.appendChild(addBtn);
+
+    col.appendChild(area); grid.appendChild(col);
+  }
+
+  const first = new Date(currentWeekStart);
+  const last = new Date(currentWeekStart); last.setDate(last.getDate() + 6);
+  const cap = s => s[0].toUpperCase() + s.slice(1);
+  let title = cap(MONTHS_NL[first.getMonth()]) + ' ' + first.getFullYear();
+  if (first.getMonth() !== last.getMonth())
+    title = cap(MONTHS_NL[first.getMonth()]) + ' – ' + cap(MONTHS_NL[last.getMonth()]) + ' ' + last.getFullYear();
+  document.getElementById('monthTitle').textContent = title;
+}
+
+// ── Lijst renderen ────────────────────────────────────
+
+function renderList(cat) {
+  const container = document.getElementById(cat === 'werk' ? 'werkTasks' : 'persoonlijkTasks');
+  rerenderListArea(container, listData[cat], saveListData);
+}
+
+// ── Navigatie & notities ──────────────────────────────
+
+document.getElementById('prevWeek').addEventListener('click', () => { currentWeekStart.setDate(currentWeekStart.getDate()-7); renderWeek(); });
+document.getElementById('nextWeek').addEventListener('click', () => { currentWeekStart.setDate(currentWeekStart.getDate()+7); renderWeek(); });
+document.getElementById('todayBtn').addEventListener('click', () => { currentWeekStart = getWeekStart(new Date()); renderWeek(); });
+
+const notesInput = document.getElementById('notesInput');
+try { notesInput.value = localStorage.getItem('wp_notes') || ''; } catch(e) {}
+notesInput.addEventListener('input', () => { try { localStorage.setItem('wp_notes', notesInput.value); } catch(e) {} });
+
+// ── Notities tab editor ───────────────────────────────
+
+const notesEditor = document.getElementById('notesEditor');
+try { notesEditor.value = localStorage.getItem('wp_notes_tab') || ''; } catch(e) {}
+notesEditor.addEventListener('input', () => { try { localStorage.setItem('wp_notes_tab', notesEditor.value); } catch(e) {} });
+
+const onderhoudEditor = document.getElementById('onderhoudEditor');
+try { onderhoudEditor.value = localStorage.getItem('wp_onderhoud') || ''; } catch(e) {}
+onderhoudEditor.addEventListener('input', () => { try { localStorage.setItem('wp_onderhoud', onderhoudEditor.value); } catch(e) {} });
+
+// ── Tabs ─────────────────────────────────────────────
+
+const calControls = document.getElementById('calControls');
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+    calControls.style.display = tab === 'kalender' ? '' : 'none';
+  });
+});
+
+document.addEventListener('click', e => {
+  if (activeColorPicker && !activeColorPicker.contains(e.target)) closeColorPicker();
+});
+
+// ── Init ─────────────────────────────────────────────
+
+loadData();
+renderWeek();
+renderList('werk');
+renderList('persoonlijk');
+
+// On mobile: scroll week grid so today (or Monday if today not in view) is visible
+(function() {
+  function scrollToToday() {
+    const grid = document.getElementById('weekGrid');
+    if (!grid) return;
+    const todayCol = grid.querySelector('.day-col.today');
+    if (todayCol) {
+      todayCol.scrollIntoView({ inline: 'start', behavior: 'instant' });
+    }
+  }
+  if (window.matchMedia('(max-width: 680px)').matches) {
+    requestAnimationFrame(scrollToToday);
+  }
+})();
+
+// ── Firebase sync ─────────────────────────────────────
+
+// Debounce helper
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+// Sync status indicator
+const syncDot = document.getElementById('syncDot');
+function setSyncStatus(status) {
+  if (!syncDot) return;
+  syncDot.className = 'sync-dot ' + status; // 'ok' | 'saving' | 'error' | 'offline'
+}
+
+let db = null;
+let remoteListening = false;
+
+async function initFirebase() {
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js');
+    const { getFirestore, doc, setDoc, onSnapshot, collection } = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js');
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDyV7ARnR4HTEjuG9s76X_sIiBY3O58NEU",
+      authDomain: "planner-ab.firebaseapp.com",
+      projectId: "planner-ab",
+      storageBucket: "planner-ab.firebasestorage.app",
+      messagingSenderId: "1045992571728",
+      appId: "1:1045992571728:web:b7a7ecfb2241982bf8e255"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+
+    // ── Upload functions ──
+    const USER = 'andrisbarabas1'; // single-user app
+
+    window._fbSaveCalData = debounce(async () => {
+      if (!db) return;
+      setSyncStatus('saving');
+      try {
+        await setDoc(doc(db, USER, 'cal'), { data: JSON.stringify(calData) });
+        setSyncStatus('ok');
+      } catch(e) { setSyncStatus('error'); }
+    }, 800);
+
+    window._fbSaveListData = debounce(async () => {
+      if (!db) return;
+      setSyncStatus('saving');
+      try {
+        await setDoc(doc(db, USER, 'list'), { data: JSON.stringify(listData) });
+        setSyncStatus('ok');
+      } catch(e) { setSyncStatus('error'); }
+    }, 800);
+
+    window._fbSaveNotes = debounce(async (key, value) => {
+      if (!db) return;
+      try {
+        await setDoc(doc(db, USER, 'notes_' + key), { data: value });
+      } catch(e) {}
+    }, 800);
+
+    window._fbSaveHidden = debounce(async () => {
+      if (!db) return;
+      try {
+        await setDoc(doc(db, USER, 'hidden'), { data: JSON.stringify([...hiddenDays]) });
+      } catch(e) {}
+    }, 800);
+
+    // ── Realtime listeners ──
+    let ignoreNextCal = false;
+    let ignoreNextList = false;
+
+    onSnapshot(doc(db, USER, 'cal'), snap => {
+      if (!snap.exists()) return;
+      if (ignoreNextCal) { ignoreNextCal = false; return; }
+      try {
+        const remote = JSON.parse(snap.data().data);
+        calData = remote;
+        try { localStorage.setItem('wp_cal', JSON.stringify(calData)); } catch(e) {}
+        renderWeek();
+      } catch(e) {}
+    });
+
+    onSnapshot(doc(db, USER, 'list'), snap => {
+      if (!snap.exists()) return;
+      if (ignoreNextList) { ignoreNextList = false; return; }
+      try {
+        const remote = JSON.parse(snap.data().data);
+        listData = remote;
+        ['werk','persoonlijk'].forEach(cat => {
+          if (!listData[cat]) listData[cat] = [];
+          while (listData[cat].length < LIST_ROWS) listData[cat].push(emptyTask());
+        });
+        try { localStorage.setItem('wp_list', JSON.stringify(listData)); } catch(e) {}
+        renderList('werk');
+        renderList('persoonlijk');
+      } catch(e) {}
+    });
+
+    onSnapshot(doc(db, USER, 'hidden'), snap => {
+      if (!snap.exists()) return;
+      try {
+        hiddenDays = new Set(JSON.parse(snap.data().data));
+        try { localStorage.setItem('wp_hidden', JSON.stringify([...hiddenDays])); } catch(e) {}
+        renderWeek();
+      } catch(e) {}
+    });
+
+    onSnapshot(doc(db, USER, 'notes_cal'), snap => {
+      if (!snap.exists()) return;
+      const val = snap.data().data || '';
+      const el = document.getElementById('notesInput');
+      if (el && el.value !== val) { el.value = val; try { localStorage.setItem('wp_notes', val); } catch(e) {} }
+    });
+
+    onSnapshot(doc(db, USER, 'notes_tab'), snap => {
+      if (!snap.exists()) return;
+      const val = snap.data().data || '';
+      const el = document.getElementById('notesEditor');
+      if (el && el.value !== val) { el.value = val; try { localStorage.setItem('wp_notes_tab', val); } catch(e) {} }
+    });
+
+    onSnapshot(doc(db, USER, 'notes_onderhoud'), snap => {
+      if (!snap.exists()) return;
+      const val = snap.data().data || '';
+      const el = document.getElementById('onderhoudEditor');
+      if (el && el.value !== val) { el.value = val; try { localStorage.setItem('wp_onderhoud', val); } catch(e) {} }
+    });
+
+    // Upload local data to Firebase on first connect
+    window._fbSaveCalData();
+    window._fbSaveListData();
+    window._fbSaveNotes('cal', notesInput.value);
+    window._fbSaveNotes('tab', notesEditor.value);
+    window._fbSaveNotes('onderhoud', onderhoudEditor.value);
+    window._fbSaveHidden();
+
+    setSyncStatus('ok');
+    remoteListening = true;
+  } catch(e) {
+    setSyncStatus('offline');
+  }
+}
+
+// Patch save functions to also push to Firebase
+const _origSaveCal = saveCalData;
+saveCalData = function() { _origSaveCal(); if (window._fbSaveCalData) window._fbSaveCalData(); };
+const _origSaveList = saveListData;
+saveListData = function() { _origSaveList(); if (window._fbSaveListData) window._fbSaveListData(); };
+const _origSaveHidden = saveHiddenDays;
+saveHiddenDays = function() { _origSaveHidden(); if (window._fbSaveHidden) window._fbSaveHidden(); };
+
+notesInput.addEventListener('input', () => { if (window._fbSaveNotes) window._fbSaveNotes('cal', notesInput.value); });
+notesEditor.addEventListener('input', () => { if (window._fbSaveNotes) window._fbSaveNotes('tab', notesEditor.value); });
+onderhoudEditor.addEventListener('input', () => { if (window._fbSaveNotes) window._fbSaveNotes('onderhoud', onderhoudEditor.value); });
+
+initFirebase();
+
+// ── Mobile: update header title when swiping between days ──
+(function() {
+  const grid = document.getElementById('weekGrid');
+  if (!grid) return;
+  let isMobile = () => window.matchMedia('(max-width: 680px)').matches;
+
+  function getDayIndexInView() {
+    const cols = grid.querySelectorAll('.day-col');
+    let best = 0, bestOverlap = -1;
+    const gridLeft = grid.getBoundingClientRect().left;
+    cols.forEach((col, i) => {
+      const r = col.getBoundingClientRect();
+      const overlap = Math.min(r.right, gridLeft + grid.clientWidth) - Math.max(r.left, gridLeft);
+      if (overlap > bestOverlap) { bestOverlap = overlap; best = i; }
+    });
+    return best;
+  }
+
+  function updateTitleForDay(idx) {
+    if (!isMobile()) return;
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + idx);
+    const dayName = DAYS_NL[date.getDay()];
+    const dayDate = date.getDate() + ' ' + MONTHS_NL[date.getMonth()].slice(0,3);
+    document.getElementById('monthTitle').textContent = dayName + ' ' + dayDate;
+  }
+
+  grid.addEventListener('scroll', () => {
+    if (!isMobile()) return;
+    clearTimeout(grid._scrollTimer);
+    grid._scrollTimer = setTimeout(() => {
+      updateTitleForDay(getDayIndexInView());
+    }, 80);
+  }, { passive: true });
+
+  // After renderWeek, update title for mobile
+  const origRenderWeek = renderWeek;
+  window.renderWeek = function() {
+    origRenderWeek.call(this, ...arguments);
+    if (isMobile()) {
+      requestAnimationFrame(() => {
+        const todayCol = grid.querySelector('.day-col.today');
+        if (todayCol) todayCol.scrollIntoView({ inline: 'start', behavior: 'instant' });
+        updateTitleForDay(getDayIndexInView());
+      });
+    }
+  };
+})();
+</script>
+</body>
+</html>
